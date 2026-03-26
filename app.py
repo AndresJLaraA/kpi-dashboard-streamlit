@@ -9,12 +9,11 @@ from datetime import datetime
 # CONFIGURACIÓN
 # ─────────────────────────────────────────────
 
-# Lógica de seguridad profesional
-if "SHAREPOINT_URL" in st.secrets:
-    SHAREPOINT_URL = st.secrets["SHAREPOINT_URL"]
-else:
-    # Solo para pruebas locales en tu terminal si no hay secrets definidos
-    SHAREPOINT_URL = "https://fonturcolombia-my.sharepoint.com/:x:/g/personal/alara_fontur_com_co/IQAHr1G56IHiQ7ulXGBvBNP8AVhnUF5G9p_Mh0EO_oSuN50?e=x1pMhV&download=1"
+SHAREPOINT_URL = (
+    "https://fonturcolombia-my.sharepoint.com/:x:/g/personal/"
+    "alara_fontur_com_co/IQAHr1G56IHiQ7ulXGBvBNP8AVhnUF5G9p_Mh0EO_oSuN50"
+    "?e=6Mftls&download=1"
+)
 
 HOJA = "Datos"
 

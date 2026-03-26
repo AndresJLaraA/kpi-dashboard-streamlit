@@ -1,0 +1,18 @@
+# Mac
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Virtual env
+venv/
+.venv/
+
+# Data files
+*.xlsx
+*.csv
+
+# Streamlit secrets
+.streamlit/secrets.toml

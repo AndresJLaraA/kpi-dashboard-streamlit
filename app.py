@@ -6,7 +6,7 @@ from io import BytesIO
 from datetime import datetime
 
 # ─────────────────────────────────────────────
-# CONFIGURACIÓN
+# CONFIGURACIÓN — edita solo esta sección
 # ─────────────────────────────────────────────
 
 SHAREPOINT_URL = (
@@ -16,363 +16,272 @@ SHAREPOINT_URL = (
 )
 
 HOJA = "Datos"
-
-CURVA_START = 120
-CURVA_END = 131
-
-IG_START = 4
-IG_END = 114
-IG_STEP = 11
-
-IR_START = 135
-IR_END = 179
-IR_STEP = 11
-
-PERIODOS = [
-    "Oct-25","Nov-25","Dic-25","Ene-26","Feb-26",
-    "Mar-26","Abr-26","May-26","Jun-26","Jul-26","Ago-26"
-]
-
 # ─────────────────────────────────────────────
-# CARGA DE DATOS
-# ─────────────────────────────────────────────
+
 
 @st.cache_data(ttl=300)
 def cargar_excel() -> pd.DataFrame:
-
     headers = {
         "User-Agent": "Mozilla/5.0",
         "Accept": "application/octet-stream",
     }
-
-    resp = requests.get(
-        SHAREPOINT_URL,
-        headers=headers,
-        timeout=30,
-        allow_redirects=True
-    )
-
+    resp = requests.get(SHAREPOINT_URL, headers=headers, timeout=30, allow_redirects=True)
     resp.raise_for_status()
-
     content_type = resp.headers.get("Content-Type", "")
-
     if "html" in content_type:
         raise ValueError(
             "SharePoint devolvió HTML en vez del archivo. "
-            "Verifica que el enlace esté compartido como público."
+            "Verifica que el enlace esté compartido como 'Cualquier persona puede ver'."
         )
+    return pd.read_excel(BytesIO(resp.content), sheet_name=HOJA, header=None)
 
-    return pd.read_excel(
-        BytesIO(resp.content),
-        sheet_name=HOJA,
-        header=None
-    )
-
-
-# ─────────────────────────────────────────────
-# PARSEO DEL EXCEL
-# ─────────────────────────────────────────────
 
 def extraer_datos(df: pd.DataFrame) -> dict:
-
-    # ── CURVA S ─────────────────────────────
-
+    periodos = ["Oct-25","Nov-25","Dic-25","Ene-26","Feb-26",
+                "Mar-26","Abr-26","May-26","Jun-26","Jul-26","Ago-26"]
     prog, real_s, desv, estados, montos = [], [], [], [], []
 
-    for i in range(CURVA_START, CURVA_END):
-
+    for i in range(120, 131):
         row = df.iloc[i]
-
         prog.append(float(row[2]) * 100 if pd.notna(row[2]) else None)
         real_s.append(float(row[3]) * 100 if pd.notna(row[3]) else None)
         desv.append(float(row[4]) if pd.notna(row[4]) else None)
+        estados.append(str(row[6]).strip() if pd.notna(row[6]) else "—")
         montos.append(float(row[5]) if pd.notna(row[5]) else None)
 
-        estados.append(
-            str(row[6]).strip() if pd.notna(row[6]) else "—"
-        )
-
-    presupuesto = (
-        float(df.iloc[118][2])
-        if pd.notna(df.iloc[118][2])
-        else 0
-    )
+    presupuesto = float(df.iloc[118][2]) if pd.notna(df.iloc[118][2]) else 0
 
     curva = pd.DataFrame({
-        "Período": PERIODOS,
-        "Programado": prog,
-        "Real": real_s,
-        "Desviación (pp)": desv,
-        "Estado": estados,
-        "Monto Ejec. COP": montos
+        "Período": periodos, "Programado": prog, "Real": real_s,
+        "Desviación (pp)": desv, "Estado": estados, "Monto Ejec. COP": montos
     })
 
-    # ── IGs ─────────────────────────────
-
     ig_rows = []
-
-    for i in range(IG_START, IG_END, IG_STEP):
-
+    for i in range(4, 114, 11):
         row = df.iloc[i]
-
         ig_rows.append({
-            "Cód.": str(row[0]).strip(),
-            "Indicador": str(row[1]).strip(),
-            "Unidad": str(row[3]).strip(),
-            "Meta Total": float(row[4]) if pd.notna(row[4]) else 1,
-            "Meta Acum.": float(row[5]) if pd.notna(row[5]) else 0,
-            "Período": str(row[6]).strip() if pd.notna(row[6]) else "—",
-            "Valor Real": float(row[8]) if pd.notna(row[8]) else 0,
-            "Últ. Acum.": float(row[9]) if pd.notna(row[9]) else 0,
+            "Cód.":        str(row[0]).strip(),
+            "Indicador":   str(row[1]).strip(),
+            "Unidad":      str(row[3]).strip(),
+            "Meta Total":  float(row[4]) if pd.notna(row[4]) else 1,
+            "Meta Acum.":  float(row[5]) if pd.notna(row[5]) else 0,
+            "Período":     str(row[6]).strip() if pd.notna(row[6]) else "—",
+            "Valor Real":  float(row[8]) if pd.notna(row[8]) else 0,
+            "Últ. Acum.":  float(row[9]) if pd.notna(row[9]) else 0,
             "% Desempeño": float(row[10]) if pd.notna(row[10]) else 0,
-            "Semáforo": int(row[11]) if pd.notna(row[11]) else 1
+            "Semáforo":    int(row[11]) if pd.notna(row[11]) else 1,
         })
-
     igs = pd.DataFrame(ig_rows)
 
-    # ── IRs ─────────────────────────────
-
     ir_rows = []
-
-    for i in range(IR_START, IR_END, IR_STEP):
-
+    for i in range(135, 179, 11):
         row = df.iloc[i]
-
         ir_rows.append({
-            "Cód.": str(row[1]).strip(),
-            "Indicador": str(row[2]).strip(),
-            "Unidad": str(row[4]).strip(),
-            "Meta": row[5] if pd.notna(row[5]) else "—",
-            "Valor": float(row[8]) if pd.notna(row[8]) else 0,
+            "Cód.":       str(row[1]).strip(),
+            "Indicador":  str(row[2]).strip(),
+            "Unidad":     str(row[4]).strip(),
+            "Meta":       str(row[5]) if pd.notna(row[5]) else "—",
+            "Valor":      float(row[8]) if pd.notna(row[8]) else 0,
             "Últ. Acum.": float(row[9]) if pd.notna(row[9]) else 0,
-            "Fuente": str(row[11]).strip() if pd.notna(row[11]) else "—"
+            "Fuente":     str(row[11]).strip() if pd.notna(row[11]) else "—",
         })
-
     irs = pd.DataFrame(ir_rows)
 
-    return {
-        "curva": curva,
-        "igs": igs,
-        "irs": irs,
-        "presupuesto": presupuesto
-    }
+    return {"curva": curva, "igs": igs, "irs": irs, "presupuesto": presupuesto}
 
 
-# ─────────────────────────────────────────────
-# UTILIDADES
-# ─────────────────────────────────────────────
-
-def semaforo_color(val: int) -> str:
+def semaforo_icon(val: int) -> str:
     return {3: "🟢", 2: "🟡", 1: "🔴"}.get(val, "⚪")
 
 
-def estado_color(estado: str) -> str:
-
-    if "Rezagado" in estado:
-        return "🔴"
-
-    if "Adelantado" in estado:
-        return "🟢"
-
-    if "En rango" in estado:
-        return "🟡"
-
+def estado_icon(estado: str) -> str:
+    if "Rezagado"   in estado: return "🔴"
+    if "Adelantado" in estado: return "🟢"
+    if "En rango"   in estado: return "🟡"
     return "⚪"
 
 
-# ─────────────────────────────────────────────
-# LAYOUT
-# ─────────────────────────────────────────────
-
+# ════════════════════════════════════════════
+#  LAYOUT
+# ════════════════════════════════════════════
 st.set_page_config(
     page_title="Dashboard FONTUR · FNTP-2025-264",
     layout="wide",
-    page_icon="📊"
+    page_icon="📊",
 )
 
 st.title("📊 Seguimiento Proyecto FNTP-2025-264")
 st.caption("Campaña Colombia el País de la Belleza · FONTUR")
 
-# ─────────────────────────────────────────────
-# CARGA
-# ─────────────────────────────────────────────
-
+# ── Carga ────────────────────────────────────
 with st.spinner("Cargando datos desde SharePoint..."):
-
     try:
-
-        df_raw = cargar_excel()
-
-        datos = extraer_datos(df_raw)
-
-        curva = datos["curva"]
-        igs = datos["igs"]
-        irs = datos["irs"]
+        df_raw      = cargar_excel()
+        datos       = extraer_datos(df_raw)
+        curva       = datos["curva"]
+        igs         = datos["igs"]
+        irs         = datos["irs"]
         presupuesto = datos["presupuesto"]
-
         st.success(
-            f"Datos actualizados · {datetime.now().strftime('%d/%m/%Y %H:%M')}"
+            f"Datos actualizados · {datetime.now().strftime('%d/%m/%Y %H:%M')}",
+            icon="✅",
         )
-
     except Exception as e:
-
         st.error(f"Error al cargar el archivo: {e}")
+        st.info("Verifica que el enlace de SharePoint esté compartido como 'Cualquier persona puede ver'.")
         st.stop()
 
-# ─────────────────────────────────────────────
-# CORTE AUTOMÁTICO
-# ─────────────────────────────────────────────
-
-curva_real = curva.dropna(subset=["Real"])
-
-if curva_real.empty:
-
-    st.warning("No hay datos de ejecución aún")
-    st.stop()
-
-corte = curva_real.iloc[-1]
-
-periodo_corte = corte["Período"]
-mes_corte = curva_real.index[-1] + 1
-
-# ─────────────────────────────────────────────
-# KPIs
-# ─────────────────────────────────────────────
-
-ejecucion_real = corte["Real"]
-meta_mes = corte["Programado"]
-desviacion = ejecucion_real - meta_mes
-monto_ejec = corte["Monto Ejec. COP"] or 0
-igs_con_avance = int((igs["Valor Real"] > 0).sum())
+# ── KPIs — calculados dinámicamente desde los datos ──
+curva_real  = curva.dropna(subset=["Real"])
+corte       = curva_real.iloc[-1]
+mes_num     = len(curva_real)                        # se actualiza solo cada mes
+ejecucion   = corte["Real"]
+meta_mes    = corte["Programado"]
+desviacion  = ejecucion - meta_mes
+monto_ejec  = corte["Monto Ejec. COP"] or 0
+igs_avance  = int((igs["Valor Real"] > 0).sum())
 
 col1, col2, col3, col4 = st.columns(4)
-
 col1.metric(
-    "Ejecución real acum.",
-    f"{ejecucion_real:.1f}%",
-    f"{desviacion:+.1f} pp vs programado"
+    "Ejecución real acum.", f"{ejecucion:.1f}%",
+    f"{desviacion:+.1f} pp vs programado",
+    delta_color="normal" if desviacion >= 0 else "inverse",
 )
-
 col2.metric(
-    "Presupuesto total",
-    f"${presupuesto/1e9:.1f}MM COP",
-    f"Ejecutado: ${monto_ejec/1e9:.1f}MM"
+    "Presupuesto total", f"${presupuesto / 1e9:.1f}MM COP",
+    f"Ejecutado: ${monto_ejec / 1e9:.1f}MM",
 )
-
 col3.metric(
-    "IGs con avance",
-    f"{igs_con_avance} / {len(igs)}"
+    "IGs con avance", f"{igs_avance} / {len(igs)}",
+    f"{len(igs) - igs_avance} en cero al corte",
+    delta_color="off",
 )
-
 col4.metric(
-    "Estado general",
-    corte["Estado"],
-    f"Corte: {periodo_corte}"
+    "Estado general", corte["Estado"],
+    f"Corte: {corte['Período']} (Mes {mes_num})",
+    delta_color="off",
 )
 
 st.divider()
 
-# ─────────────────────────────────────────────
-# TABS
-# ─────────────────────────────────────────────
+# ── Tabs ─────────────────────────────────────
+tab1, tab2, tab3 = st.tabs([
+    "📈 Curva-S",
+    "📋 Indicadores de Gestión (IGs)",
+    "🎯 Indicadores de Resultado (IRs)",
+])
 
-tab1, tab2, tab3 = st.tabs(
-    [
-        "📈 Curva-S",
-        "📋 Indicadores de Gestión",
-        "🎯 Indicadores de Resultado"
-    ]
-)
-
-# ─────────────────────────────────────────────
-# TAB CURVA S
-# ─────────────────────────────────────────────
-
+# ── TAB 1: Curva-S ────────────────────────────
 with tab1:
-
-    curva_real = curva.dropna(subset=["Real"])
+    st.subheader("Curva-S — Avance presupuestal acumulado")
 
     fig = go.Figure()
-
     fig.add_trace(go.Scatter(
-        x=curva["Período"],
-        y=curva["Programado"],
-        name="Programado",
-        mode="lines+markers",
-        line=dict(color="#185FA5", dash="dot")
+        x=curva["Período"], y=curva["Programado"],
+        name="Programado", mode="lines+markers",
+        line=dict(color="#185FA5", width=2, dash="dot"),
+        marker=dict(size=6),
     ))
-
     fig.add_trace(go.Scatter(
-        x=curva_real["Período"],
-        y=curva_real["Real"],
-        name="Real ejecutado",
-        mode="lines+markers",
-        line=dict(color="#A32D2D")
+        x=curva_real["Período"], y=curva_real["Real"],
+        name="Real ejecutado", mode="lines+markers",
+        line=dict(color="#A32D2D", width=2.5),
+        marker=dict(size=7),
     ))
-
     fig.update_layout(
-        yaxis_title="% acumulado",
-        yaxis=dict(ticksuffix="%"),
-        height=380
+        yaxis_title="% Acumulado",
+        yaxis=dict(ticksuffix="%", range=[0, 110]),
+        legend=dict(orientation="h", y=-0.15),
+        margin=dict(t=20, b=40),
+        height=380,
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+    st.subheader("Detalle por período")
+    tabla_c = curva.copy()
+    tabla_c["Programado"]       = tabla_c["Programado"].apply(lambda x: f"{x:.1f}%" if pd.notna(x) else "—")
+    tabla_c["Real"]             = tabla_c["Real"].apply(lambda x: f"{x:.1f}%" if pd.notna(x) else "—")
+    tabla_c["Desviación (pp)"]  = tabla_c["Desviación (pp)"].apply(lambda x: f"{x:+.2f} pp" if pd.notna(x) else "—")
+    tabla_c["Monto Ejec. COP"]  = tabla_c["Monto Ejec. COP"].apply(lambda x: f"${x:,.0f}" if pd.notna(x) else "—")
+    tabla_c["Estado"]           = tabla_c["Estado"].apply(lambda e: f"{estado_icon(e)} {e}")
+    st.dataframe(tabla_c, use_container_width=True, hide_index=True)
+
+# ── TAB 2: IGs ────────────────────────────────
+with tab2:
+    st.subheader(f"Indicadores de Gestión — Corte {corte['Período']}")
+
+    verde    = int((igs["Semáforo"] == 3).sum())
+    amarillo = int((igs["Semáforo"] == 2).sum())
+    rojo     = int((igs["Semáforo"] == 1).sum())
+    c1, c2, c3 = st.columns(3)
+    c1.metric("🟢 En meta o adelantado", verde)
+    c2.metric("🟡 En observación",       amarillo)
+    c3.metric("🔴 Crítico / Sin avance", rojo)
+
+    fig2 = go.Figure()
+    fig2.add_trace(go.Bar(
+        y=igs["Cód."], x=igs["Meta Acum."] * 100,
+        name="Meta acum.", orientation="h",
+        marker_color="rgba(24,95,165,0.25)",
+        text=[f"{v*100:.1f}%" for v in igs["Meta Acum."]],
+        textposition="outside",
+    ))
+    fig2.add_trace(go.Bar(
+        y=igs["Cód."], x=igs["Valor Real"] * 100,
+        name="Real", orientation="h",
+        marker_color=[
+            "#3B6D11" if s == 3 else "#BA7517" if s == 2 else "#A32D2D"
+            for s in igs["Semáforo"]
+        ],
+        text=[f"{v*100:.1f}%" for v in igs["Valor Real"]],
+        textposition="outside",
+    ))
+    fig2.update_layout(
+        barmode="overlay",
+        xaxis=dict(ticksuffix="%", range=[0, 110]),
+        legend=dict(orientation="h", y=-0.15),
+        margin=dict(t=10, b=40, l=120),
+        height=420,
+    )
+    st.plotly_chart(fig2, use_container_width=True)
+
+    tabla_ig = igs.copy()
+    tabla_ig["Sem."]        = tabla_ig["Semáforo"].map(semaforo_icon)
+    tabla_ig["Meta Acum."]  = tabla_ig["Meta Acum."].apply(lambda x: f"{x*100:.1f}%")
+    tabla_ig["Valor Real"]  = tabla_ig["Valor Real"].apply(lambda x: f"{x*100:.1f}%")
+    tabla_ig["% Desempeño"] = tabla_ig["% Desempeño"].apply(lambda x: f"{x:.0f}%")
+    st.dataframe(
+        tabla_ig[["Cód.", "Indicador", "Unidad", "Meta Acum.",
+                  "Valor Real", "% Desempeño", "Período", "Sem."]],
+        use_container_width=True, hide_index=True,
     )
 
-    st.plotly_chart(fig, use_container_width=True)
-
-# ─────────────────────────────────────────────
-# TAB IG
-# ─────────────────────────────────────────────
-
-with tab2:
-
-    fig = go.Figure()
-
-    fig.add_trace(go.Bar(
-        y=igs["Cód."],
-        x=igs["Meta Acum."] * 100,
-        orientation="h",
-        name="Meta"
-    ))
-
-    fig.add_trace(go.Bar(
-        y=igs["Cód."],
-        x=igs["Valor Real"] * 100,
-        orientation="h",
-        name="Real"
-    ))
-
-    st.plotly_chart(fig, use_container_width=True)
-
-# ─────────────────────────────────────────────
-# TAB IR
-# ─────────────────────────────────────────────
-
+# ── TAB 3: IRs ────────────────────────────────
 with tab3:
+    st.subheader("Indicadores de Resultado — Estado al corte")
+    st.info("Los IRs se activan en períodos posteriores según cronograma.")
 
-    st.dataframe(irs, use_container_width=True)
+    tabla_ir = irs.copy()
+    tabla_ir["Estado"] = tabla_ir["Valor"].apply(
+        lambda v: "🟢 Con avance" if v > 0 else "⚪ Pendiente"
+    )
+    st.dataframe(
+        tabla_ir[["Cód.", "Indicador", "Unidad", "Meta", "Valor", "Estado", "Fuente"]],
+        use_container_width=True, hide_index=True,
+    )
 
-# ─────────────────────────────────────────────
-# SIDEBAR
-# ─────────────────────────────────────────────
-
+# ── Sidebar ───────────────────────────────────
 with st.sidebar:
-
     st.header("⚙️ Configuración")
-
     st.markdown(f"""
-    **Proyecto:** FNTP-2025-264  
-    **Contrato:** FNTC-161-2026  
-    **Horizonte:** Oct-25 – Ago-26  
-
-    **Corte actual:** {periodo_corte} (Mes {mes_corte})  
-
-    **Presupuesto:** ${presupuesto/1e9:.2f}MM COP
+**Proyecto:** FNTP-2025-264  
+**Contrato:** FNTC-161-2026  
+**Horizonte:** Oct-25 – Ago-26  
+**Corte actual:** {corte['Período']} (Mes {mes_num})  
+**Presupuesto:** ${presupuesto / 1e9:.2f}MM COP  
     """)
-
     st.divider()
-
     if st.button("🔄 Forzar actualización"):
-
         st.cache_data.clear()
         st.rerun()
-
-    st.caption("Datos refrescados cada 5 minutos.")
+    st.caption("Datos refrescados automáticamente cada 5 min.")
